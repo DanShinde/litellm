@@ -65,18 +65,20 @@ impl NativeCacheInvalidation {
     #[pyo3(signature = (cache_key, new_value = None, ttl = None))]
     fn publish(
         &self,
+        py: Python<'_>,
         cache_key: String,
         new_value: Option<PyNumber>,
         ttl: Option<PyNumber>,
     ) -> bool {
-        self.channel.publish(&match new_value {
+        let invalidation = match new_value {
             Some(value) => Invalidation::Set {
                 cache_key,
                 value: value.0,
                 ttl: ttl.map(|ttl| ttl.0),
             },
             None => Invalidation::Evict(cache_key),
-        })
+        };
+        crate::logger::capture(py).scope(|| self.channel.publish(&invalidation))
     }
 
     fn broadcast_evictions<'py>(
@@ -91,7 +93,7 @@ impl NativeCacheInvalidation {
         })
     }
 
-    fn start(&self) {
+    fn start(&self, py: Python<'_>) {
         let mut subscription = self.subscription.lock();
         if subscription.is_some() {
             return;
@@ -102,7 +104,8 @@ impl NativeCacheInvalidation {
         let apply_python = self.apply_python.clone();
         let python_caches = self.python_caches.clone();
         let context = self.context.clone();
-        let task = self.channel.runtime().spawn(async move {
+        let logger = crate::logger::capture(py);
+        let task = self.channel.runtime().spawn(logger.instrument(async move {
             while let Some(invalidation) = messages.next().await {
                 cache_invalidation::apply(&invalidation, &auth_cache, &spend_counters);
                 let apply_python = apply_python.clone();
@@ -127,7 +130,7 @@ impl NativeCacheInvalidation {
                     tracing::warn!(%error, "applying an auth cache invalidation to Python caches failed");
                 }
             }
-        });
+        }));
         *subscription = Some(task.abort_handle());
     }
 

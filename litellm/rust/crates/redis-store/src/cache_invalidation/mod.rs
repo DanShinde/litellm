@@ -12,6 +12,7 @@ use std::{
 use futures_util::{StreamExt, stream::BoxStream};
 use litellm_redis_client::RedisClient;
 use tokio::{runtime::Handle, sync::Semaphore};
+use tracing::instrument::WithSubscriber;
 
 pub use self::keys::channel;
 pub use self::types::Invalidation;
@@ -67,7 +68,7 @@ impl CacheInvalidation {
         let cache_key = invalidation.cache_key().to_owned();
         self.spawn(1, async move {
             if let Err(error) = client.publish(&channel, &[payload]).await {
-                tracing::warn!(%error, cache_key, "auth cache invalidation publish failed");
+                tracing::warn!("auth cache invalidation publish for {cache_key} failed: {error}");
             }
         })
         .is_some()
@@ -87,7 +88,7 @@ impl CacheInvalidation {
         let count = cache_keys.len();
         let Some(task) = self.spawn(count, async move {
             if let Err(error) = client.publish(&channel, &payloads).await {
-                tracing::warn!(%error, count, "auth cache invalidation publish failed");
+                tracing::warn!("auth cache invalidation publish for {count} keys failed: {error}");
             }
         }) else {
             return;
@@ -122,12 +123,17 @@ impl CacheInvalidation {
         }
         let in_flight = self.in_flight.clone();
         let waiting = self.pending.clone();
-        Some(self.runtime.spawn(async move {
-            if let Ok(_permit) = in_flight.acquire_owned().await {
-                publish.await;
-            }
-            waiting.fetch_sub(1, Ordering::AcqRel);
-        }))
+        Some(
+            self.runtime.spawn(
+                async move {
+                    if let Ok(_permit) = in_flight.acquire_owned().await {
+                        publish.await;
+                    }
+                    waiting.fetch_sub(1, Ordering::AcqRel);
+                }
+                .with_current_subscriber(),
+            ),
+        )
     }
 }
 
