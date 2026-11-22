@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import AliasChoices, ConfigDict, Field, SecretStr, field_validator
 
@@ -36,4 +36,6 @@ class ClientCredentialsAuthProfile(_AuthProfile):
     client_secret: SecretStr | None = Field(default=None, exclude=True, repr=False)
 
 
-MCPAuthProfile = Annotated[StaticAuthProfile | ClientCredentialsAuthProfile, Field(discriminator="auth_type")]
+MCPAuthProfile: TypeAlias = Annotated[
+    StaticAuthProfile | ClientCredentialsAuthProfile, Field(discriminator="auth_type")
+]
