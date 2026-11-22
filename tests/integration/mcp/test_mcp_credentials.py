@@ -78,6 +78,36 @@ def test_static_credential_reaches_the_peer_in_its_mode_shape_and_is_encrypted_a
         assert _plaintext_rows(identity, secret) == [], "credential stored in plaintext"
 
 
+@pytest.mark.parametrize("entry", ("rest", "server_mcp"))
+def test_an_ordinary_server_permission_lists_and_calls_with_the_servers_default_credential(
+    gateway: Gateway, entry: EntryPoint
+) -> None:
+    tool: Final = ScriptedTool("ping", lambda _: text_result("pong"))
+    with scripted_peer(tool) as peer, gateway.scenario() as scenario:
+        alias: Final = "ordinary" + uuid.uuid4().hex[:8]
+        identity: Final = register_mcp(
+            scenario, peer, alias, auth_type="bearer_token", credentials={"auth_value": "default-bearer"}
+        )
+        key: Final = scenario.key(object_permission={"mcp_servers": [identity]})
+        server_info: Final = gateway.request("GET", f"/v1/mcp/server/{identity}")
+        key_info: Final = gateway.request("GET", "/key/info", params={"key": key})
+        assert server_info.status_code == 200, server_info.text
+        assert "additional_auth" not in server_info.json()
+        assert key_info.status_code == 200
+        permission: Final = key_info.json()["info"]["object_permission"]
+        assert permission["mcp_servers"] == [identity] and "mcp_auth_profiles" not in permission
+
+        caller: Final = McpCaller(gateway, key, entry, alias)
+        listed: Final = caller.list_tools(identity)
+        tool_name: Final = "ping" if entry == "rest" else f"{alias}-ping"
+        assert listed.ok and listed.tools == (tool_name,), listed.raw
+        peer.drain()
+        called: Final = caller.call(tool_name, {}, identity)
+        assert called.ok and called.text == "pong", called.raw
+        headers: Final = TypeAdapter(dict[str, str]).validate_python(_one_call(peer)["headers"])
+        assert headers["authorization"] == "Bearer default-bearer"
+
+
 def test_create_response_does_not_echo_the_stored_credential(gateway: Gateway) -> None:
     with mcp_peer() as peer, gateway.scenario() as scenario:
         secret: Final = "create-secret-" + uuid.uuid4().hex
