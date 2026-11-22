@@ -43,6 +43,15 @@ def test_client_credentials_profile_returns_the_flow_settings_without_the_creden
     assert PROFILES.validate_python(public).model_dump(mode="json") == public
 
 
+def test_resending_a_public_profile_preserves_omitted_oauth_settings() -> None:
+    public: Final = {"id": "a" * 64, "auth_type": "oauth2", "oauth2_flow": "client_credentials"}
+    profile: Final = PROFILES.validate_python({**public, "client_secret": "app-secret"})
+    encoded: Final = PROFILES.dump_json(profile)
+
+    assert json.loads(encoded) == public
+    assert PROFILES.validate_json(encoded).model_fields_set == set(public)
+
+
 @pytest.mark.parametrize(
     "settings",
     (

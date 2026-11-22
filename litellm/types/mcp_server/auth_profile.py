@@ -6,6 +6,10 @@ from litellm.types.llms.base_model import LiteLLMBaseModel
 from litellm.types.mcp import MCPAuth, MCPTokenEndpointAuthMethod
 
 
+def _is_none(value: object) -> bool:
+    return value is None
+
+
 class _AuthProfile(LiteLLMBaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", hide_input_in_errors=True)
 
@@ -29,9 +33,9 @@ class StaticAuthProfile(_AuthProfile):
 class ClientCredentialsAuthProfile(_AuthProfile):
     auth_type: Literal[MCPAuth.oauth2]
     oauth2_flow: Literal["client_credentials"]
-    token_url: str | None = None
-    scopes: tuple[str, ...] | None = None
-    token_endpoint_auth_method: MCPTokenEndpointAuthMethod | None = None
+    token_url: str | None = Field(default=None, exclude_if=_is_none)
+    scopes: tuple[str, ...] | None = Field(default=None, exclude_if=_is_none)
+    token_endpoint_auth_method: MCPTokenEndpointAuthMethod | None = Field(default=None, exclude_if=_is_none)
     client_id: SecretStr | None = Field(default=None, exclude=True, repr=False)
     client_secret: SecretStr | None = Field(default=None, exclude=True, repr=False)
 
