@@ -52,6 +52,30 @@ def test_resending_a_public_profile_preserves_omitted_oauth_settings() -> None:
     assert PROFILES.validate_json(encoded).model_fields_set == set(public)
 
 
+def test_oauth_schema_documents_credentials_only_on_input() -> None:
+    input_fields: Final = PROFILES.json_schema(mode="validation")["$defs"]["ClientCredentialsAuthProfile"]["properties"]
+    output_fields: Final = PROFILES.json_schema(mode="serialization")["$defs"]["ClientCredentialsAuthProfile"][
+        "properties"
+    ]
+    assert set(input_fields) - set(output_fields) == {"client_id", "client_secret"}
+    assert {"id", "auth_type", "oauth2_flow", "scopes"} <= set(output_fields)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    (
+        {"auth_type": "basic", "authentication_token": "canary", "auth_value": "canary"},
+        {"client_secret": "canary"},
+        {"auth_type": "canary", "client_secret": "canary"},
+    ),
+)
+def test_profile_validation_errors_do_not_include_credential_input(settings: dict[str, str]) -> None:
+    with pytest.raises(ValidationError) as error:
+        PROFILES.validate_python({"id": "bot", **settings})
+    assert "canary" not in str(error.value)
+    assert "canary" not in error.value.json()
+
+
 @pytest.mark.parametrize(
     "settings",
     (
